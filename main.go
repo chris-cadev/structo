@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	var a Args
+	var a CommandLineArguments
 	arg.MustParse(&a)
 
 	// Build our config from the arguments
@@ -25,12 +25,12 @@ func main() {
 	}
 
 	// Set up our logger to write to a file in the output folder
-	logFile, err := setupLogger(cfg.OutputFolder)
+	cfg, err = setupLogger(cfg)
 	if err != nil {
 		log.Fatalf("Could not set up logger: %v", err)
 	}
 	// Ensure we close the file when finished
-	defer logFile.Close()
+	defer cfg.Logger.Close()
 
 	// Initial logs (program start)
 	log.Printf(locMsg("start_organizer", cfg.Language), time.Now().Format(time.RFC3339))

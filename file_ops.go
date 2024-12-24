@@ -14,36 +14,20 @@ import (
 // from its modification time, and moves it into a subfolder in the output folder.
 // organizeFiles walks the input folder, determines each file's year/quarter
 // from its modification time, and moves it into a subfolder in the output folder.
-func organizeFiles(cfg Config) error {
+func organizeFiles(cfg MovementConfiguration) error {
 	return filepath.Walk(cfg.InputFolder, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return fmt.Errorf("walk error: %w", err)
 		}
 		if info.IsDir() {
-			// Skip directories but continue walking
 			return nil
 		}
 
-		// 1) Check if this file should be skipped
-		skip, skipErr := skipIfInOutput(path, cfg.OutputFolder)
-		if skipErr != nil {
-			return skipErr
-		}
-		if skip {
-			log.Printf(locMsg("skipping_file", cfg.Language), path)
-			return nil
-		}
-
-		// 2) Build (and ensure) the target quarter directory
 		quarterDir, dirErr := buildAndEnsureTargetDir(cfg.OutputFolder, info.ModTime(), cfg.Language)
 		if dirErr != nil {
 			return dirErr
 		}
 
-		// 3) Determine final path
-		// If the user wants to preserve the folder structure, we figure out
-		// the relative path from the input root to the file. Otherwise, we
-		// just drop the file in the quarter folder.
 		var targetPath string
 		if !cfg.PreserveStructure {
 			// Just place it directly in the quarter folder
@@ -56,12 +40,28 @@ func organizeFiles(cfg Config) error {
 			targetPath = filepath.Join(quarterDir, relPath)
 		}
 
-		// 4) Ensure the target directories exist (especially important
+		skip, skipErr := isPathAlreadyRelocated(path, targetPath)
+		if skipErr != nil {
+			return skipErr
+		}
+		if skip {
+			log.Printf(locMsg("skipping_file", cfg.Language), path)
+			return nil
+		}
+
+		isLogger := isPathTheLogger(path, cfg)
+		if err != nil {
+			return err
+		}
+		if isLogger {
+			log.Printf(locMsg("skipping_file", cfg.Language), path)
+			return nil
+		}
+
 		if mkErr := os.MkdirAll(filepath.Dir(targetPath), 0755); mkErr != nil {
 			return fmt.Errorf("failed to create target directory for %q: %w", targetPath, mkErr)
 		}
 
-		// 5) Move (or copy) the file
 		if moveErr := moveFile(path, targetPath, info); moveErr != nil {
 			log.Printf(locMsg("move_error", cfg.Language), path, targetPath, moveErr)
 			return moveErr
@@ -70,6 +70,23 @@ func organizeFiles(cfg Config) error {
 		log.Printf(locMsg("moved_file", cfg.Language), path, targetPath)
 		return nil
 	})
+}
+
+func isPathTheLogger(path string, config MovementConfiguration) bool {
+	loggerPath := config.Logger.Name()
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		log.Printf("Error getting absolute path for %s: %v", path, err)
+		return false
+	}
+
+	absLoggerPath, err := filepath.Abs(loggerPath)
+	if err != nil {
+		log.Printf("Error getting absolute logger path for %s: %v", loggerPath, err)
+		return false
+	}
+
+	return absPath == absLoggerPath
 }
 
 // buildAndEnsureTargetDir determines the correct quarter/year folder, then creates
@@ -196,15 +213,14 @@ func checkFolderExists(folderPath string) error {
 	return nil
 }
 
-// skipIfInOutput checks whether `path` is inside the `outputFolder`. If so, return `true` so we can skip it.
-func skipIfInOutput(path, outputFolder string) (bool, error) {
+func isPathAlreadyRelocated(path, targetPath string) (bool, error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return false, fmt.Errorf("failed to get absolute path for %q: %w", path, err)
 	}
-	absOutput, err := filepath.Abs(outputFolder)
+	absTarget, err := filepath.Abs(targetPath)
 	if err != nil {
-		return false, fmt.Errorf("failed to get absolute output path for %q: %w", outputFolder, err)
+		return false, fmt.Errorf("failed to get absolute output path for %q: %w", targetPath, err)
 	}
-	return strings.HasPrefix(absPath, absOutput), nil
+	return strings.Compare(absPath, absTarget) == 0, nil
 }
