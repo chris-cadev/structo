@@ -4,16 +4,11 @@ import (
 	"log"
 	"os"
 	"time"
-
-	"github.com/alexflint/go-arg"
 )
 
 func main() {
-	var a CommandLineArguments
-	arg.MustParse(&a)
-
 	// Build our config from the arguments
-	cfg, err := parseArgs(a)
+	cfg, err := parseArgs()
 	if err != nil {
 		// We'll temporarily log to stderr, then exit
 		log.Fatalf("Error parsing config: %v", err)
