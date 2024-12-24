@@ -1,4 +1,6 @@
-<img src="assets/branding-image.webp" alt="branding image" style="width:200px;"/>
+<div class="branding-image" style="width:100%; text-align=center">
+    <img src="assets/branding-image.webp" alt="branding image" style="width:200px;"/>
+</div>
 
 # Structo: File Organizer Tool
 
