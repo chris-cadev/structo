@@ -1,3 +1,5 @@
+![](assets/branding-image.webp)
+
 # Structo: File Organizer Tool
 
 This is an experimental file organizer written in Go. It sorts files from an input folder into quarterly subfolders within an output folder, based on their last modification times. The program includes support for optional localization (currently English and Spanish) and configurable folder structure preservation.
