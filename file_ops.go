@@ -12,6 +12,8 @@ import (
 
 // organizeFiles walks the input folder, determines each file's year/quarter
 // from its modification time, and moves it into a subfolder in the output folder.
+// organizeFiles walks the input folder, determines each file's year/quarter
+// from its modification time, and moves it into a subfolder in the output folder.
 func organizeFiles(cfg Config) error {
 	return filepath.Walk(cfg.InputFolder, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -32,14 +34,34 @@ func organizeFiles(cfg Config) error {
 			return nil
 		}
 
-		// 2) Build (and ensure) the target directory
-		targetDir, dirErr := buildAndEnsureTargetDir(cfg.OutputFolder, info.ModTime(), cfg.Language)
+		// 2) Build (and ensure) the target quarter directory
+		quarterDir, dirErr := buildAndEnsureTargetDir(cfg.OutputFolder, info.ModTime(), cfg.Language)
 		if dirErr != nil {
 			return dirErr
 		}
 
-		// 3) Move (or copy) the file
-		targetPath := filepath.Join(targetDir, info.Name())
+		// 3) Determine final path
+		// If the user wants to preserve the folder structure, we figure out
+		// the relative path from the input root to the file. Otherwise, we
+		// just drop the file in the quarter folder.
+		var targetPath string
+		if !cfg.PreserveStructure {
+			// Just place it directly in the quarter folder
+			targetPath = filepath.Join(quarterDir, info.Name())
+		} else {
+			relPath, relErr := filepath.Rel(cfg.InputFolder, path)
+			if relErr != nil {
+				return fmt.Errorf("failed to determine relative path: %w", relErr)
+			}
+			targetPath = filepath.Join(quarterDir, relPath)
+		}
+
+		// 4) Ensure the target directories exist (especially important
+		if mkErr := os.MkdirAll(filepath.Dir(targetPath), 0755); mkErr != nil {
+			return fmt.Errorf("failed to create target directory for %q: %w", targetPath, mkErr)
+		}
+
+		// 5) Move (or copy) the file
 		if moveErr := moveFile(path, targetPath, info); moveErr != nil {
 			log.Printf(locMsg("move_error", cfg.Language), path, targetPath, moveErr)
 			return moveErr
