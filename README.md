@@ -1,4 +1,4 @@
-![](assets/branding-image.webp)
+<img src="assets/branding-image.webp" alt="branding image" style="width:200px;"/>
 
 # Structo: File Organizer Tool
 
