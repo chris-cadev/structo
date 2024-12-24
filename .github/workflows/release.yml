@@ -6,8 +6,8 @@ on:
       - "v*" # Triggers on version tags like v1.0.0
 
 jobs:
-  release:
-    name: Build and Release Binaries
+  build:
+    name: Build binaries
     runs-on: ubuntu-latest
 
     strategy:
@@ -30,18 +30,37 @@ jobs:
         env:
           CGO_ENABLED: 0
 
-      - name: Install GitHub CLI
-        run: |
-          sudo apt-get install -y gh
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
 
-      - name: Authenticate GitHub CLI
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Upload binaries to release
+        uses: actions/upload-artifact@v3
+        with:
+          name: binaries
+          path: build/
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh auth login --with-token --hostname github.com
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
 
-      - name: Create Release with Binaries
-        run: |
-          gh release create ${{ github.ref_name }} build/${{ matrix.os }}-${{ matrix.arch }}/app --title "Release ${{ github.ref_name }}" --notes "Automatically generated binaries for ${{ github.ref_name }}"
+      - name: Upload Binaries
+        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: build/
+          asset_name: binaries
+          asset_content_type: application/zip
