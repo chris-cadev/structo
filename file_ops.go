@@ -16,8 +16,10 @@ import (
 // from its modification time, and moves it into a subfolder in the output folder.
 func organizeFiles(cfg MovementConfiguration) error {
 	return filepath.Walk(cfg.InputFolder, func(path string, info os.FileInfo, err error) error {
+		path = strings.TrimSpace(path)
 		if err != nil {
-			return fmt.Errorf("walk error: %w", err)
+			log.Println(locMsg("error_organizing", cfg.Language)+": %v", err)
+			return nil
 		}
 		if info.IsDir() {
 			return nil
@@ -50,9 +52,6 @@ func organizeFiles(cfg MovementConfiguration) error {
 		}
 
 		isLogger := isPathTheLogger(path, cfg)
-		if err != nil {
-			return err
-		}
 		if isLogger {
 			log.Printf(locMsg("skipping_file", cfg.Language), path)
 			return nil
