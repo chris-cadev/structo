@@ -12,66 +12,134 @@ import (
 
 // organizeFiles walks the input folder, determines each file's year/quarter
 // from its modification time, and moves it into a subfolder in the output folder.
-// organizeFiles walks the input folder, determines each file's year/quarter
-// from its modification time, and moves it into a subfolder in the output folder.
-func organizeFiles(cfg MovementConfiguration) error {
+func organizeFiles(cfg FilesMoveConfiguration) error {
 	return filepath.Walk(cfg.InputFolder, func(path string, info os.FileInfo, err error) error {
 		path = strings.TrimSpace(path)
 		if err != nil {
-			log.Println(locMsg("error_organizing", cfg.Language)+": %v", err)
+			logError("error_organizing", cfg.Language, err)
 			return nil
 		}
+
 		if info.IsDir() {
 			return nil
 		}
 
-		quarterDir, dirErr := buildAndEnsureTargetDir(cfg.OutputFolder, info.ModTime(), cfg.Language)
+		if skip, skipErr := applySkipFilters(path, info, cfg); skip || skipErr != nil {
+			return skipErr
+		}
+
+		targetPath, dirErr := determineTargetPath(path, info, cfg)
 		if dirErr != nil {
 			return dirErr
 		}
 
-		var targetPath string
-		if !cfg.PreserveStructure {
-			// Just place it directly in the quarter folder
-			targetPath = filepath.Join(quarterDir, info.Name())
-		} else {
-			relPath, relErr := filepath.Rel(cfg.InputFolder, path)
-			if relErr != nil {
-				return fmt.Errorf("failed to determine relative path: %w", relErr)
-			}
-			targetPath = filepath.Join(quarterDir, relPath)
-		}
-
-		skip, skipErr := isPathAlreadyRelocated(path, targetPath)
-		if skipErr != nil {
-			return skipErr
-		}
-		if skip {
-			log.Printf(locMsg("skipping_file", cfg.Language), path)
-			return nil
-		}
-
-		isLogger := isPathTheLogger(path, cfg)
-		if isLogger {
-			log.Printf(locMsg("skipping_file", cfg.Language), path)
-			return nil
-		}
-
-		if mkErr := os.MkdirAll(filepath.Dir(targetPath), 0755); mkErr != nil {
-			return fmt.Errorf("failed to create target directory for %q: %w", targetPath, mkErr)
+		if mkErr := ensureTargetDirectory(targetPath); mkErr != nil {
+			return mkErr
 		}
 
 		if moveErr := moveFile(path, targetPath, info); moveErr != nil {
-			log.Printf(locMsg("move_error", cfg.Language), path, targetPath, moveErr)
+			logMoveError(path, targetPath, cfg.Language, moveErr)
 			return moveErr
 		}
 
-		log.Printf(locMsg("moved_file", cfg.Language), path, targetPath)
+		logMovedFile(path, targetPath, cfg.Language)
 		return nil
 	})
 }
 
-func isPathTheLogger(path string, config MovementConfiguration) bool {
+func logError(msgKey, language string, err error) {
+	log.Println(locMsg(msgKey, language)+": %v", err)
+}
+
+func applySkipFilters(path string, info os.FileInfo, cfg FilesMoveConfiguration) (bool, error) {
+	filters := []func(string, os.FileInfo, FilesMoveConfiguration) (bool, error){
+		isPathAlreadyRelocatedFilter,
+		isLoggerPathFilter,
+		isFilterByBeforeConfiguration,
+	}
+
+	for _, filter := range filters {
+		if skip, err := filter(path, info, cfg); skip || err != nil {
+			return skip, err
+		}
+	}
+	return false, nil
+}
+
+func isPathAlreadyRelocatedFilter(path string, info os.FileInfo, cfg FilesMoveConfiguration) (bool, error) {
+	skip, skipErr := isPathAlreadyRelocated(path, determineTargetPathUnsafe(path, info, cfg))
+	if skipErr != nil {
+		return false, skipErr
+	}
+	if skip {
+		log.Printf(locMsg("skipping_file", cfg.Language), path)
+	}
+	return skip, nil
+}
+
+func isLoggerPathFilter(path string, info os.FileInfo, cfg FilesMoveConfiguration) (bool, error) {
+	if isPathTheLogger(path, cfg) {
+		log.Printf(locMsg("skipping_file", cfg.Language), path)
+		return true, nil
+	}
+	return false, nil
+}
+
+func isFilterByBeforeConfiguration(path string, info os.FileInfo, cfg FilesMoveConfiguration) (bool, error) {
+	if cfg.Before == nil {
+		return false, nil
+	}
+	beforeDate, parseErr := time.Parse("2006-01-02", *cfg.Before)
+	if parseErr != nil {
+		return false, fmt.Errorf("invalid 'before' date format: %w", parseErr)
+	}
+	isFiltered := info.ModTime().After(beforeDate)
+	if isFiltered {
+		log.Printf("[INFO] Skipping file: '%s'. Reason: Modified on '%s', which is after the specified 'before' date '%s'.", path, info.ModTime().Format("2006-01-02"), *cfg.Before)
+	}
+	return isFiltered, nil
+}
+
+func determineTargetPath(path string, info os.FileInfo, cfg FilesMoveConfiguration) (string, error) {
+	quarterDir, dirErr := buildAndEnsureTargetDir(cfg.OutputFolder, info.ModTime(), cfg.Language)
+	if dirErr != nil {
+		return "", dirErr
+	}
+	if !cfg.PreserveStructure {
+		return filepath.Join(quarterDir, info.Name()), nil
+	}
+	relPath, relErr := filepath.Rel(cfg.InputFolder, path)
+	if relErr != nil {
+		return "", fmt.Errorf("failed to determine relative path: %w", relErr)
+	}
+	return filepath.Join(quarterDir, relPath), nil
+}
+
+func determineTargetPathUnsafe(path string, info os.FileInfo, cfg FilesMoveConfiguration) string {
+	quarterDir, _ := buildAndEnsureTargetDir(cfg.OutputFolder, info.ModTime(), cfg.Language)
+	if !cfg.PreserveStructure {
+		return filepath.Join(quarterDir, info.Name())
+	}
+	relPath, _ := filepath.Rel(cfg.InputFolder, path)
+	return filepath.Join(quarterDir, relPath)
+}
+
+func ensureTargetDirectory(targetPath string) error {
+	if mkErr := os.MkdirAll(filepath.Dir(targetPath), 0755); mkErr != nil {
+		return fmt.Errorf("failed to create target directory for %q: %w", targetPath, mkErr)
+	}
+	return nil
+}
+
+func logMoveError(path, targetPath, language string, err error) {
+	log.Printf(locMsg("move_error", language), path, targetPath, err)
+}
+
+func logMovedFile(path, targetPath, language string) {
+	log.Printf(locMsg("moved_file", language), path, targetPath)
+}
+
+func isPathTheLogger(path string, config FilesMoveConfiguration) bool {
 	loggerPath := config.Logger.Name()
 	absPath, err := filepath.Abs(path)
 	if err != nil {
