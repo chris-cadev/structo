@@ -14,6 +14,7 @@ type CommandLineArguments struct {
 	Lang              string  `arg:"--lang" help:"Language to use (e.g., 'en' for English or 'es' for Spanish; defaults to 'en')."`
 	PreserveStructure bool    `arg:"--preserve-structure" help:"Preserve subfolder structure under the quarter folder."`
 	Before            *string `arg:"--before" help:"Date in YYYY-MM-DD format; files before this date will be processed."`
+	NoDryRun          *bool   `arg:"--no-dry-run" help:"This will make the changes happen."`
 }
 
 type FilesMoveConfiguration struct {
@@ -21,6 +22,7 @@ type FilesMoveConfiguration struct {
 	OutputFolder      string
 	Language          string
 	PreserveStructure bool
+	DryRun            bool
 	Before            *string
 	Logger            *os.File
 }
@@ -50,11 +52,17 @@ func parseArgs() (FilesMoveConfiguration, error) {
 		before = &parsedDate
 	}
 
+	noDryRun := false
+	if args.NoDryRun != nil {
+		noDryRun = *args.NoDryRun
+	}
+
 	return FilesMoveConfiguration{
 		InputFolder:       args.Input,
 		OutputFolder:      args.Output,
 		Language:          args.Lang,
 		PreserveStructure: args.PreserveStructure,
+		DryRun:            !noDryRun,
 		Before:            before,
 	}, nil
 }

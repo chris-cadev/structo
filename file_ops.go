@@ -33,16 +33,18 @@ func organizeFiles(cfg FilesMoveConfiguration) error {
 			return dirErr
 		}
 
-		if mkErr := ensureTargetDirectory(targetPath); mkErr != nil {
+		if mkErr := ensureTargetDirectory(targetPath, cfg.DryRun); mkErr != nil {
 			return mkErr
 		}
 
-		if moveErr := moveFile(path, targetPath, info); moveErr != nil {
+		if moveErr := moveFile(path, targetPath, info, cfg.DryRun); moveErr != nil {
 			logMoveError(path, targetPath, cfg.Language, moveErr)
 			return moveErr
 		}
 
-		logMovedFile(path, targetPath, cfg.Language)
+		if !cfg.DryRun {
+			logMovedFile(path, targetPath, cfg.Language)
+		}
 		return nil
 	})
 }
@@ -101,7 +103,7 @@ func isFilterByBeforeConfiguration(path string, info os.FileInfo, cfg FilesMoveC
 }
 
 func determineTargetPath(path string, info os.FileInfo, cfg FilesMoveConfiguration) (string, error) {
-	quarterDir, dirErr := buildAndEnsureTargetDir(cfg.OutputFolder, info.ModTime(), cfg.Language)
+	quarterDir, dirErr := buildAndEnsureTargetDir(cfg.OutputFolder, info.ModTime(), cfg.Language, cfg.DryRun)
 	if dirErr != nil {
 		return "", dirErr
 	}
@@ -116,7 +118,7 @@ func determineTargetPath(path string, info os.FileInfo, cfg FilesMoveConfigurati
 }
 
 func determineTargetPathUnsafe(path string, info os.FileInfo, cfg FilesMoveConfiguration) string {
-	quarterDir, _ := buildAndEnsureTargetDir(cfg.OutputFolder, info.ModTime(), cfg.Language)
+	quarterDir, _ := buildAndEnsureTargetDir(cfg.OutputFolder, info.ModTime(), cfg.Language, cfg.DryRun)
 	if !cfg.PreserveStructure {
 		return filepath.Join(quarterDir, info.Name())
 	}
@@ -124,8 +126,14 @@ func determineTargetPathUnsafe(path string, info os.FileInfo, cfg FilesMoveConfi
 	return filepath.Join(quarterDir, relPath)
 }
 
-func ensureTargetDirectory(targetPath string) error {
-	if mkErr := os.MkdirAll(filepath.Dir(targetPath), 0755); mkErr != nil {
+func ensureTargetDirectory(targetPath string, dryRun bool) error {
+	dir := filepath.Dir(targetPath)
+
+	if dryRun {
+		return nil
+	}
+
+	if mkErr := os.MkdirAll(dir, 0755); mkErr != nil {
 		return fmt.Errorf("failed to create target directory for %q: %w", targetPath, mkErr)
 	}
 	return nil
@@ -158,11 +166,16 @@ func isPathTheLogger(path string, config FilesMoveConfiguration) bool {
 
 // buildAndEnsureTargetDir determines the correct quarter/year folder, then creates
 // the directory if necessary. It returns the final path where files should go.
-func buildAndEnsureTargetDir(outputFolder string, modTime time.Time, lang string) (string, error) {
+func buildAndEnsureTargetDir(outputFolder string, modTime time.Time, lang string, dryRun bool) (string, error) {
 	dir, err := buildQuarterFolder(outputFolder, modTime, lang)
 	if err != nil {
 		return "", fmt.Errorf("failed to build quarter folder: %w", err)
 	}
+
+	if dryRun {
+		return dir, nil
+	}
+
 	if mkErr := os.MkdirAll(dir, 0755); mkErr != nil {
 		return "", fmt.Errorf("failed to create target directory %q: %w", dir, mkErr)
 	}
@@ -199,10 +212,15 @@ func fileExists(path string) bool {
 }
 
 // In your moveFile function, before actually renaming/copying:
-func moveFile(src, dst string, info os.FileInfo) error {
+func moveFile(src, dst string, info os.FileInfo, dryRun bool) error {
 	uniqueDst, err := ensureUniquePath(dst)
 	if err != nil {
 		return fmt.Errorf("error ensuring unique path: %w", err)
+	}
+
+	if dryRun {
+		log.Printf("[DRY RUN] Would move: %s => %s", src, uniqueDst)
+		return nil
 	}
 
 	err = os.Rename(src, uniqueDst)
@@ -214,19 +232,28 @@ func moveFile(src, dst string, info os.FileInfo) error {
 	log.Printf("Rename failed, falling back to copy: %s => %s (err=%v)", src, uniqueDst, err)
 
 	// Copy fallback
-	if copyErr := copyFilePreserve(src, uniqueDst, info); copyErr != nil {
+	if copyErr := copyFilePreserve(src, uniqueDst, info, dryRun); copyErr != nil {
 		return fmt.Errorf("copy fallback failed: %w", copyErr)
 	}
-	// Remove the original
-	if rmErr := os.Remove(src); rmErr != nil {
+
+	// Remove the original (only if not a dry run)
+	if dryRun {
+		log.Printf("[DRY RUN] Would remove original: %s", src)
+	} else if rmErr := os.Remove(src); rmErr != nil {
 		return fmt.Errorf("failed removing original %q: %w", src, rmErr)
 	}
+
 	return nil
 }
 
 // copyFilePreserve copies src into dst, then sets mod/acc times
 // to match the original file.
-func copyFilePreserve(src, dst string, info os.FileInfo) error {
+func copyFilePreserve(src, dst string, info os.FileInfo, dryRun bool) error {
+	if dryRun {
+		log.Printf("[DRY RUN] Would copy: %s => %s", src, dst)
+		return nil
+	}
+
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return err
