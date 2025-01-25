@@ -15,6 +15,7 @@ type CommandLineArguments struct {
 	PreserveStructure bool    `arg:"--preserve-structure" help:"Preserve subfolder structure under the quarter folder."`
 	Before            *string `arg:"--before" help:"Date in YYYY-MM-DD format; files before this date will be processed."`
 	NoDryRun          *bool   `arg:"--no-dry-run" help:"This will make the changes happen."`
+	FolderFormat      *string `arg:"--folder-format" help:"The folder format to use when creating files and directories"`
 }
 
 type FilesMoveConfiguration struct {
@@ -25,6 +26,7 @@ type FilesMoveConfiguration struct {
 	DryRun            bool
 	Before            *string
 	Logger            *os.File
+	FolderFormat      FolderFormat
 }
 
 func parseArgs() (FilesMoveConfiguration, error) {
@@ -57,6 +59,15 @@ func parseArgs() (FilesMoveConfiguration, error) {
 		noDryRun = *args.NoDryRun
 	}
 
+	folderFormat := YearThenQuarters
+	var err error = nil
+	if args.FolderFormat != nil {
+		folderFormat, err = ParseFolderFormat(*args.FolderFormat)
+		if err != nil {
+			return FilesMoveConfiguration{}, fmt.Errorf("invalid folder format: %v", err)
+		}
+	}
+
 	return FilesMoveConfiguration{
 		InputFolder:       args.Input,
 		OutputFolder:      args.Output,
@@ -64,6 +75,7 @@ func parseArgs() (FilesMoveConfiguration, error) {
 		PreserveStructure: args.PreserveStructure,
 		DryRun:            !noDryRun,
 		Before:            before,
+		FolderFormat:      folderFormat,
 	}, nil
 }
 

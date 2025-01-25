@@ -103,7 +103,7 @@ func isFilterByBeforeConfiguration(path string, info os.FileInfo, cfg FilesMoveC
 }
 
 func determineTargetPath(path string, info os.FileInfo, cfg FilesMoveConfiguration) (string, error) {
-	quarterDir, dirErr := buildAndEnsureTargetDir(cfg.OutputFolder, info.ModTime(), cfg.Language, cfg.DryRun)
+	quarterDir, dirErr := buildAndEnsureTargetDir(cfg.OutputFolder, info.ModTime(), cfg)
 	if dirErr != nil {
 		return "", dirErr
 	}
@@ -118,7 +118,7 @@ func determineTargetPath(path string, info os.FileInfo, cfg FilesMoveConfigurati
 }
 
 func determineTargetPathUnsafe(path string, info os.FileInfo, cfg FilesMoveConfiguration) string {
-	quarterDir, _ := buildAndEnsureTargetDir(cfg.OutputFolder, info.ModTime(), cfg.Language, cfg.DryRun)
+	quarterDir, _ := buildAndEnsureTargetDir(cfg.OutputFolder, info.ModTime(), cfg)
 	if !cfg.PreserveStructure {
 		return filepath.Join(quarterDir, info.Name())
 	}
@@ -127,11 +127,10 @@ func determineTargetPathUnsafe(path string, info os.FileInfo, cfg FilesMoveConfi
 }
 
 func ensureTargetDirectory(targetPath string, dryRun bool) error {
-	dir := filepath.Dir(targetPath)
-
 	if dryRun {
 		return nil
 	}
+	dir := filepath.Dir(targetPath)
 
 	if mkErr := os.MkdirAll(dir, 0755); mkErr != nil {
 		return fmt.Errorf("failed to create target directory for %q: %w", targetPath, mkErr)
@@ -166,13 +165,19 @@ func isPathTheLogger(path string, config FilesMoveConfiguration) bool {
 
 // buildAndEnsureTargetDir determines the correct quarter/year folder, then creates
 // the directory if necessary. It returns the final path where files should go.
-func buildAndEnsureTargetDir(outputFolder string, modTime time.Time, lang string, dryRun bool) (string, error) {
-	dir, err := buildQuarterFolder(outputFolder, modTime, lang)
+func buildAndEnsureTargetDir(outputFolder string, modTime time.Time, cfg FilesMoveConfiguration) (string, error) {
+	var dir string
+	var err error
+	if cfg.FolderFormat == YearThenQuarters {
+		dir, err = buildQuarterFolder(outputFolder, modTime, cfg.Language)
+	} else if cfg.FolderFormat == DayThenHours {
+		dir, err = buildHourFolder(outputFolder, modTime)
+	}
 	if err != nil {
 		return "", fmt.Errorf("failed to build quarter folder: %w", err)
 	}
 
-	if dryRun {
+	if cfg.DryRun {
 		return dir, nil
 	}
 
@@ -180,6 +185,30 @@ func buildAndEnsureTargetDir(outputFolder string, modTime time.Time, lang string
 		return "", fmt.Errorf("failed to create target directory %q: %w", dir, mkErr)
 	}
 	return dir, nil
+}
+
+// buildHourFolder constructs a directory path like:
+//
+//	<outputFolder>/YYYY-MM-dd/HHa
+func buildHourFolder(outputFolder string, modTime time.Time) (string, error) {
+	// Extract year, month, and day
+	year := modTime.Year()
+	month := modTime.Month()
+	day := modTime.Day()
+
+	// Format hour with AM/PM
+	hourLabel := modTime.Format("03PM")
+
+	// Ensure the formatted values are valid
+	if year == 0 || int(month) < 1 || int(month) > 12 || day < 1 || day > 31 {
+		return "", fmt.Errorf("invalid date in modTime: %v", modTime)
+	}
+
+	// Construct the folder path
+	dayFolder := fmt.Sprintf("%d-%02d-%02d", year, month, day)
+	hourFolder := hourLabel
+
+	return filepath.Join(outputFolder, dayFolder, hourFolder), nil
 }
 
 // ensureUniquePath checks if path already exists, and if so, appends (1), (2), etc.
