@@ -102,28 +102,46 @@ func isFilterByBeforeConfiguration(path string, info os.FileInfo, cfg FilesMoveC
 	return isFiltered, nil
 }
 
+func isImageFile(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".tif", ".webp", ".svg":
+		return true
+	default:
+		return false
+	}
+}
+
 func determineTargetPath(path string, info os.FileInfo, cfg FilesMoveConfiguration) (string, error) {
-	quarterDir, dirErr := buildAndEnsureTargetDir(cfg.OutputFolder, info.ModTime(), cfg)
+	var dateTaken *time.Time
+	if isImageFile(path) {
+		dateTaken, _ = GetDateTaken(path)
+	}
+	if dateTaken == nil {
+		modTime := info.ModTime()
+		dateTaken = &modTime
+	}
+	dir, dirErr := buildAndEnsureTargetDir(cfg.OutputFolder, *dateTaken, cfg)
 	if dirErr != nil {
 		return "", dirErr
 	}
 	if !cfg.PreserveStructure {
-		return filepath.Join(quarterDir, info.Name()), nil
+		return filepath.Join(dir, info.Name()), nil
 	}
 	relPath, relErr := filepath.Rel(cfg.InputFolder, path)
 	if relErr != nil {
 		return "", fmt.Errorf("failed to determine relative path: %w", relErr)
 	}
-	return filepath.Join(quarterDir, relPath), nil
+	return filepath.Join(dir, relPath), nil
 }
 
 func determineTargetPathUnsafe(path string, info os.FileInfo, cfg FilesMoveConfiguration) string {
-	quarterDir, _ := buildAndEnsureTargetDir(cfg.OutputFolder, info.ModTime(), cfg)
+	dir, _ := buildAndEnsureTargetDir(cfg.OutputFolder, info.ModTime(), cfg)
 	if !cfg.PreserveStructure {
-		return filepath.Join(quarterDir, info.Name())
+		return filepath.Join(dir, info.Name())
 	}
 	relPath, _ := filepath.Rel(cfg.InputFolder, path)
-	return filepath.Join(quarterDir, relPath)
+	return filepath.Join(dir, relPath)
 }
 
 func ensureTargetDirectory(targetPath string, dryRun bool) error {
