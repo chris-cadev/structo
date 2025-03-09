@@ -12,25 +12,31 @@ type FolderFormat int
 const (
 	YearThenQuarters FolderFormat = iota
 	DayThenHours
+	HalfYears
 )
 
 const (
-	FormatYearQuarters = "year-then-quarters"
-	FormatDayHours     = "day-then-hours"
-	LangSpanishYear    = "a\u00f1o-luego-cuartos"
-	LangSpanishDay     = "dia-luego-horas"
+	FormatYearQuarters        = "year-then-quarters"
+	FormatDayHours            = "day-then-hours"
+	FormatHalfYears           = "half-years"
+	SpanishFormatYearQuarters = "a\u00f1o-luego-cuartos"
+	SpanishFormatDayHours     = "dia-luego-horas"
+	SpanishHalfYears          = "medios-a\u00f1os"
 )
 
 var stateName = map[FolderFormat]string{
 	YearThenQuarters: FormatYearQuarters,
 	DayThenHours:     FormatDayHours,
+	HalfYears:        FormatHalfYears,
 }
 
 var reverseStateName = map[string]FolderFormat{
-	FormatYearQuarters: YearThenQuarters,
-	LangSpanishYear:    YearThenQuarters,
-	FormatDayHours:     DayThenHours,
-	LangSpanishDay:     DayThenHours,
+	FormatYearQuarters:        YearThenQuarters,
+	SpanishFormatYearQuarters: YearThenQuarters,
+	FormatDayHours:            DayThenHours,
+	SpanishFormatDayHours:     DayThenHours,
+	FormatHalfYears:           HalfYears,
+	SpanishHalfYears:          HalfYears,
 }
 
 // String returns the string representation of FolderFormat.
@@ -53,6 +59,8 @@ func createFolderFormatDirectory(outputRoot string, modTime time.Time, cfg Files
 		return createYearThenQuartersFolder(outputRoot, modTime, cfg.Language)
 	case DayThenHours:
 		return createDayThenHoursFolder(outputRoot, modTime)
+	case HalfYears:
+		return createHalfYearsFolder(outputRoot, modTime, cfg.Language)
 	default:
 		return "", errors.New("unsupported FolderFormat")
 	}
@@ -107,4 +115,33 @@ func formatQuarterFolder(quarterNum int, quarterLabel string) string {
 // isValidDate checks if the provided date components form a valid date.
 func isValidDate(year int, month time.Month, day int) bool {
 	return year > 0 && month >= 1 && month <= 12 && day >= 1 && day <= 31
+}
+
+func createHalfYearsFolder(outputRoot string, modTime time.Time, lang string) (string, error) {
+	year := modTime.Year()
+	semesterNum, semesterLabel := semesterInfoForMonth(int(modTime.Month()), lang)
+	if semesterNum == 0 {
+		return "", fmt.Errorf("invalid month %d in modTime %v", modTime.Month(), modTime)
+	}
+	return filepath.Join(outputRoot, fmt.Sprintf("%d-%s", year, semesterLabel)), nil
+}
+
+// semesterInfoForMonth returns the semester number and label based on the month and language.
+func semesterInfoForMonth(month int, lang string) (int, string) {
+	semesters := map[string][]string{
+		"en": {"JAN-FEB-MAR-APR-MAY-JUN", "JUL-AUG-SEP-OCT-NOV-DEC"},
+		"es": {"ENE-FEB-MAR-ABR-MAY-JUN", "JUL-AGO-SEP-OCT-NOV-DIC"},
+	}
+	if month < 1 || month > 12 {
+		return 0, ""
+	}
+	semesterNum := 1
+	if month > 6 {
+		semesterNum = 2
+	}
+	semesterLabels := semesters[lang]
+	if len(semesterLabels) == 0 {
+		semesterLabels = semesters["en"]
+	}
+	return semesterNum, semesterLabels[semesterNum-1]
 }
